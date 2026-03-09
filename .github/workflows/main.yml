@@ -27,7 +27,7 @@ jobs:
           poetry --version
 
       - name: Instalar Dependências
-        run: poetry install --no-interaction
+        run: poetry install --no-interaction --no-root
 
       - name: Executar Script de Extração
         env:
