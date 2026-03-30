@@ -36,7 +36,7 @@ def processar_repositorio():
     hoje = datetime.now()
     pasta_raiz = os.getenv('PASTA_AREAS', 'areas')
     excel_final = os.getenv('NOME_EXCEL', 'analise.xlsx')
-    
+
     # Definição da ordem exata das colunas
     ordem_colunas = ['data', 'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B8A', 'B9', 'B11', 'B12']
 
@@ -46,47 +46,46 @@ def processar_repositorio():
                 cod_area, data_cursor = validar_arquivo(nome_arq)
                 if not cod_area: continue
 
-                if os.path.exists(excel_final):
-                    try:
-                        df_ex = pd.read_excel(excel_final, sheet_name=str(cod_area))
-                        if not df_ex.empty:
-                            data_cursor = pd.to_datetime(df_ex['data'].max()) + timedelta(days=7)
-                    except: pass
-
                 try:
                     gdf = gpd.read_file(os.path.join(root, nome_arq)).to_crs("EPSG:4326")
                     geom_ee = ee.Geometry(gdf.geometry.iloc[0].__geo_interface__)
 
-                    while data_cursor + timedelta(days=7) <= hoje:
-                        s_ini, s_fim = data_cursor.strftime('%Y-%m-%d'), (data_cursor + timedelta(days=7)).strftime('%Y-%m-%d')
-                        
-                        imagem = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
-                                   .filterBounds(geom_ee)
-                                   .filterDate(s_ini, s_fim)
-                                   .map(mascarar_nuvens)
-                                   .select(ordem_colunas[1:]) # Pega de B1 em diante
-                                   .median())
+                    # Busca todas as imagens disponíveis para a geometria
+                    colecao = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
+                                .filterBounds(geom_ee)
+                                .filterDate(data_cursor.strftime('%Y-%m-%d'), hoje.strftime('%Y-%m-%d')))
+
+                    # Lista todas as datas de aquisição disponíveis
+                    datas = colecao.aggregate_array('system:time_start').getInfo()
+                    datas = [datetime.utcfromtimestamp(ts/1000) for ts in datas]
+
+                    registros = []
+                    for data_img in datas:
+                        s_data = data_img.strftime('%Y-%m-%d')
+                        imagem = (colecao
+                                  .filterDate(s_data, (data_img + timedelta(days=1)).strftime('%Y-%m-%d'))
+                                  .map(mascarar_nuvens)
+                                  .select(ordem_colunas[1:])
+                                  .median())
 
                         stats = imagem.reduceRegion(reducer=ee.Reducer.mean(), geometry=geom_ee, scale=10).getInfo()
 
                         if stats and any(v is not None for v in stats.values()):
-                            # Criamos o DataFrame já com as colunas na ordem correta
-                            registro = {'data': s_ini, **stats}
-                            df_novo = pd.DataFrame([registro]).reindex(columns=ordem_colunas)
+                            registro = {'data': s_data, **stats}
+                            registros.append(registro)
 
-                            # Gerenciamento de escrita nas abas
-                            mode = 'a' if os.path.exists(excel_final) else 'w'
-                            with pd.ExcelWriter(excel_final, engine='openpyxl', mode=mode, 
-                                               if_sheet_exists='overlay' if mode == 'a' else None) as writer:
-                                try:
-                                    df_atual = pd.read_excel(excel_final, sheet_name=str(cod_area))
-                                    df_final = pd.concat([df_atual, df_novo], ignore_index=True)
-                                    df_final.to_excel(writer, sheet_name=str(cod_area), index=False)
-                                except:
-                                    df_novo.to_excel(writer, sheet_name=str(cod_area), index=False)
-                            
-                            print(f"Sucesso [{cod_area}]: {s_ini}")
-                        data_cursor += timedelta(days=7)
+                    if registros:
+                        df_novo = pd.DataFrame(registros).reindex(columns=ordem_colunas)
+                        mode = 'a' if os.path.exists(excel_final) else 'w'
+                        with pd.ExcelWriter(excel_final, engine='openpyxl', mode=mode, 
+                                           if_sheet_exists='overlay' if mode == 'a' else None) as writer:
+                            try:
+                                df_atual = pd.read_excel(excel_final, sheet_name=str(cod_area))
+                                df_final = pd.concat([df_atual, df_novo], ignore_index=True)
+                                df_final.to_excel(writer, sheet_name=str(cod_area), index=False)
+                            except:
+                                df_novo.to_excel(writer, sheet_name=str(cod_area), index=False)
+                        print(f"Sucesso [{cod_area}]: {len(registros)} imagens")
                 except Exception as e: print(f"Erro {nome_arq}: {e}")
 
 if __name__ == "__main__":
