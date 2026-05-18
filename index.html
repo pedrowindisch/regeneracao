@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Regeneração · Monitoramento Espectral</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;--s1:#161b22;--s2:#1c2128;--bd:#30363d;--mt:#484f58;
+  --tx:#e6edf3;--dm:#7d8590;
+  --gn:#3fb950;--bl:#58a6ff;--or:#f0883e;--pu:#bc8cff;--rd:#f85149;--yw:#e3b341;
+  --ndvi:#3fb950;--ndmi:#58a6ff;--evi:#f0883e;--savi:#bc8cff;--nbr:#f85149;
+  --r:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font-family:'Space Grotesk',sans-serif;font-size:14px}
+#loader{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:999;transition:opacity .5s}
+#loader.out{opacity:0;pointer-events:none}
+.spin{width:40px;height:40px;border:3px solid var(--bd);border-top-color:var(--gn);border-radius:50%;animation:sp .7s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+.lbar{width:180px;height:3px;background:var(--bd);border-radius:3px;overflow:hidden}
+.lfill{height:100%;background:linear-gradient(90deg,var(--gn),var(--bl));width:0%;transition:width .4s}
+.ltxt{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--dm)}
+header{position:sticky;top:0;z-index:100;background:rgba(13,17,23,.93);backdrop-filter:blur(10px);border-bottom:1px solid var(--bd);padding:12px 24px;display:flex;align-items:center;gap:12px}
+.logo{width:30px;height:30px;border-radius:6px;background:linear-gradient(135deg,var(--gn),var(--bl));display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.ht{font-size:14px;font-weight:600}.hs{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--dm);margin-top:1px}
+.hright{margin-left:auto}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;border:1px solid var(--bd);font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--dm)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--mt)}.dot.ok{background:var(--gn);animation:gl 2s infinite}.dot.er{background:var(--rd)}
+@keyframes gl{0%,100%{opacity:1}50%{opacity:.4}}
+.page{padding:20px 24px;max-width:1400px;margin:0 auto}
+@media(max-width:660px){.page{padding:12px}}
+.sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px}
+.sc{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);padding:14px 16px}
+.scl{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--dm);margin-bottom:5px}
+.scv{font-family:'JetBrains Mono',monospace;font-size:24px;font-weight:500;line-height:1}
+.scv.g{color:var(--gn)}.scv.b{color:var(--bl)}.scv.y{color:var(--yw)}
+.scs{font-size:11px;color:var(--dm);margin-top:3px}
+.ctrl{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.clbl{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dm);text-transform:uppercase;letter-spacing:.07em}
+select{background:var(--s2);border:1px solid var(--bd);border-radius:5px;color:var(--tx);padding:6px 11px;font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;outline:none;transition:border-color .15s}
+select:focus{border-color:var(--bl)}
+.bg{display:flex;gap:3px}
+.btn{padding:5px 10px;border-radius:5px;border:1px solid var(--bd);background:transparent;color:var(--dm);font-family:'JetBrains Mono',monospace;font-size:11px;cursor:pointer;transition:all .15s}
+.btn:hover{border-color:var(--mt);color:var(--tx)}
+.btn.on{border-color:var(--gn);background:rgba(63,185,80,.1);color:var(--gn)}
+.itabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.it{padding:5px 13px;border-radius:20px;border:1px solid var(--bd);background:transparent;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--dm);cursor:pointer;transition:all .15s}
+.it:hover{border-color:var(--mt);color:var(--tx)}
+.it.sNDVI{border-color:var(--ndvi);background:rgba(63,185,80,.1);color:var(--ndvi)}
+.it.sNDMI{border-color:var(--ndmi);background:rgba(88,166,255,.1);color:var(--ndmi)}
+.it.sEVI {border-color:var(--evi); background:rgba(240,136,62,.1);color:var(--evi)}
+.it.sSAVI{border-color:var(--savi);background:rgba(188,140,255,.1);color:var(--savi)}
+.it.sNBR {border-color:var(--nbr); background:rgba(248,81,73,.1);color:var(--nbr)}
+.panel{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);padding:18px;margin-bottom:12px}
+.ph{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.pt{font-size:13px;font-weight:600}
+.leg{display:flex;gap:12px;flex-wrap:wrap;margin-left:auto}
+.li{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--dm)}
+.ll{width:16px;height:2px;border-radius:2px}
+.ld{width:16px;height:0;border-top:2px dashed}
+.sg{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:10px;margin-bottom:12px}
+.st{background:var(--s2);border:1px solid var(--bd);border-radius:var(--r);padding:13px 15px;position:relative;overflow:hidden}
+.st::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px}
+.st.ndvi::before{background:var(--ndvi)}.st.ndmi::before{background:var(--ndmi)}
+.st.evi::before{background:var(--evi)}.st.savi::before{background:var(--savi)}.st.nbr::before{background:var(--nbr)}
+.stn{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}
+.stn.ndvi{color:var(--ndvi)}.stn.ndmi{color:var(--ndmi)}.stn.evi{color:var(--evi)}.stn.savi{color:var(--savi)}.stn.nbr{color:var(--nbr)}
+.sr{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid var(--bd);font-size:11px}
+.sr:last-child{border:none}
+.sr .k{color:var(--dm)}.sr .v{font-family:'JetBrains Mono',monospace;color:var(--tx)}
+.badge{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:10px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600}
+.badge.up{background:rgba(63,185,80,.15);color:var(--gn)}
+.badge.dn{background:rgba(248,81,73,.15);color:var(--rd)}
+.badge.ne{background:rgba(125,133,144,.15);color:var(--dm)}
+.smg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:660px){.smg{grid-template-columns:1fr}}
+.smp{background:var(--s2);border:1px solid var(--bd);border-radius:var(--r);padding:14px}
+.smpt{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
+.slbl{font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:var(--dm);margin-bottom:8px}
+.errbox{background:rgba(248,81,73,.08);border:1px solid rgba(248,81,73,.3);border-radius:var(--r);padding:14px 16px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--rd);display:none;margin-bottom:12px}
+</style>
+</head>
+<body>
+
+<div id="loader">
+  <div class="spin"></div>
+  <div class="lbar"><div class="lfill" id="lf"></div></div>
+  <div class="ltxt" id="lt">Buscando analise.xlsx…</div>
+</div>
+
+<header>
+  <div class="logo">🌿</div>
+  <div>
+    <div class="ht">Regeneração · Monitoramento Espectral</div>
+    <div class="hs">FURB · Sentinel-2 · Etapa 3</div>
+  </div>
+  <div class="hright">
+    <div class="pill"><div class="dot" id="dot"></div><span id="dotlbl">carregando</span></div>
+  </div>
+</header>
+
+<div class="page" id="app" style="display:none">
+  <div class="errbox" id="errbox"></div>
+  <div class="sum" id="sumcards"></div>
+
+  <div class="ctrl">
+    <span class="clbl">Área</span>
+    <select id="roisel"></select>
+    <span class="clbl" style="margin-left:6px">Média móvel</span>
+    <div class="bg" id="magrp">
+      <button class="btn" data-v="0">Desativada</button>
+      <button class="btn on" data-v="4">4 semanas</button>
+      <button class="btn" data-v="8">8 semanas</button>
+      <button class="btn" data-v="12">12 semanas</button>
+    </div>
+    <span class="clbl" style="margin-left:6px">Regressão</span>
+    <div class="bg" id="reggrp">
+      <button class="btn on" data-v="1">Exibir</button>
+      <button class="btn" data-v="0">Ocultar</button>
+    </div>
+  </div>
+
+  <div class="itabs" id="itabs">
+    <button class="it sNDVI" data-i="NDVI">NDVI</button>
+    <button class="it" data-i="NDMI">NDMI</button>
+    <button class="it" data-i="EVI">EVI</button>
+    <button class="it" data-i="SAVI">SAVI</button>
+    <button class="it" data-i="NBR">NBR</button>
+  </div>
+
+  <div class="panel">
+    <div class="ph">
+      <span class="pt" id="maintitle">—</span>
+      <div class="leg">
+        <div class="li"><div class="ll" id="legline" style="background:var(--ndvi)"></div>série temporal</div>
+        <div class="li"><div class="ld" style="border-color:var(--bl)"></div>média móvel</div>
+        <div class="li"><div class="ld" style="border-color:var(--yw)"></div>reta de regressão</div>
+      </div>
+    </div>
+    <canvas id="mainchart" height="260"></canvas>
+  </div>
+
+  <div class="slbl">Indicadores estatísticos — <span id="roilbl">—</span></div>
+  <div class="sg" id="statsgrid"></div>
+
+  <div class="slbl" style="margin-top:6px">Séries temporais · todas as bandas artificiais</div>
+  <div class="smg" id="smallgrid"></div>
+</div>
+
+<script>
+const XLSX_URL = 'https://raw.githubusercontent.com/pedrowindisch/regeneracao/main/analise.xlsx';
+const IDX = ['NDVI','NDMI','EVI','SAVI','NBR'];
+const ICLR = {NDVI:'#3fb950',NDMI:'#58a6ff',EVI:'#f0883e',SAVI:'#bc8cff',NBR:'#f85149'};
+
+const S = {sheets:{}, roi:null, idx:'NDVI', ma:4, reg:true, main:null, small:{}};
+
+function setLoad(msg, pct) {
+  document.getElementById('lt').textContent = msg;
+  document.getElementById('lf').style.width = pct + '%';
+}
+function doneLoad() {
+  document.getElementById('loader').classList.add('out');
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('dot').className = 'dot ok';
+  document.getElementById('dotlbl').textContent = 'dados carregados';
+}
+function showErr(msg) {
+  document.getElementById('loader').classList.add('out');
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('dot').className = 'dot er';
+  document.getElementById('dotlbl').textContent = 'erro ao carregar';
+  const b = document.getElementById('errbox');
+  b.style.display = 'block';
+  b.textContent = '⚠ ' + msg;
+}
+
+(async () => {
+  try {
+    setLoad('Buscando analise.xlsx…', 15);
+    const r = await fetch(XLSX_URL);
+    if (!r.ok) throw new Error('HTTP ' + r.status + ' — verifique se o GitHub Pages está ativo e o analise.xlsx está na raiz do repositório.');
+    setLoad('Lendo planilha…', 50);
+    const buf = await r.arrayBuffer();
+    setLoad('Calculando índices espectrais…', 75);
+    const wb = XLSX.read(buf, {type:'array', cellDates:true});
+    wb.SheetNames.forEach(n => {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[n], {raw:false});
+      if (rows.length) S.sheets[n] = rows;
+    });
+    const rois = Object.keys(S.sheets);
+    if (!rois.length) throw new Error('Nenhuma aba encontrada no analise.xlsx.');
+    setLoad('Construindo painel…', 92);
+    setTimeout(() => { buildUI(rois); doneLoad(); }, 60);
+  } catch(e) { showErr(e.message); }
+})();
+
+function gm(row, band) {
+  for (const k of [band+'_median', band.toLowerCase()+'_median']) {
+    if (row[k] !== undefined && row[k] !== null && row[k] !== '') return parseFloat(row[k]);
+  }
+  return null;
+}
+function sd(a,b){ return(!b||b===0||a===null||isNaN(a)||isNaN(b))?null:a/b; }
+
+function calcIdx(row) {
+  if (!parseInt(row['n_pixels']||0)) return {};
+  const b2=gm(row,'B2'), b4=gm(row,'B4');
+  const b8=gm(row,'B8'), b8a=gm(row,'B8A');
+  const b11=gm(row,'B11'), b12=gm(row,'B12');
+  const nir = b8 ?? b8a;
+  if (nir===null||b4===null) return {};
+  const ndvi = sd(nir-b4, nir+b4);
+  const ndmi = sd(nir-b11, nir+b11);
+  const evi  = b2!==null ? sd(nir-b4, nir+6*b4-7.5*b2+1) : null;
+  let savi   = sd(nir-b4, nir+b4+0.5);
+  if (savi!==null) savi *= 1.5;
+  const nbr  = sd(nir-b12, nir+b12);
+  return {NDVI:ndvi, NDMI:ndmi, EVI:evi, SAVI:savi, NBR:nbr};
+}
+
+function prep(roiName) {
+  const raw = S.sheets[roiName] || [];
+  let arr = [];
+  raw.forEach(row => {
+    const dr = row['data'] || row['Data'] || row['DATE'];
+    if (!dr) return;
+    const d = new Date(dr);
+    if (isNaN(d)) return;
+    arr.push({date:d, ...calcIdx(row)});
+  });
+  arr.sort((a,b) => a.date - b.date);
+  IDX.forEach(ix => {
+    arr.forEach(r => { if(r[ix]!==undefined&&(r[ix]<-1||r[ix]>1)) r[ix]=null; });
+    for(let i=1;i<arr.length-1;i++){
+      const p=arr[i-1][ix],c=arr[i][ix],n=arr[i+1][ix];
+      if(c!==null&&p!==null&&n!==null&&Math.abs(c-p)>0.5&&Math.abs(c-n)>0.5) arr[i][ix]=null;
+    }
+    let i=0;
+    while(i<arr.length){
+      if(arr[i][ix]==null){
+        let s=i-1,e=i;
+        while(e<arr.length&&arr[e][ix]==null) e++;
+        if(s>=0&&e<arr.length){
+          const v0=arr[s][ix],v1=arr[e][ix],sp=e-s;
+          for(let j=s+1;j<e;j++) arr[j][ix]=v0+(v1-v0)*(j-s)/sp;
+        }
+        i=e+1;
+      } else i++;
+    }
+  });
+  return arr;
+}
+
+function movAvg(ys, w) {
+  if(!w) return ys.map(()=>null);
+  return ys.map((_,i)=>{
+    if(i<w-1) return null;
+    const sl=ys.slice(i-w+1,i+1).filter(v=>v!=null);
+    return sl.length ? sl.reduce((a,b)=>a+b,0)/sl.length : null;
+  });
+}
+
+function linReg(ys) {
+  const pts=ys.map((v,i)=>v!=null?{x:i,y:v}:null).filter(Boolean);
+  if(pts.length<2) return null;
+  const n=pts.length;
+  const mx=pts.reduce((s,p)=>s+p.x,0)/n, my=pts.reduce((s,p)=>s+p.y,0)/n;
+  const num=pts.reduce((s,p)=>s+(p.x-mx)*(p.y-my),0);
+  const den=pts.reduce((s,p)=>s+(p.x-mx)**2,0);
+  if(!den) return null;
+  const sl=num/den, ic=my-sl*mx;
+  return ys.map((_,i)=>+(sl*i+ic).toFixed(6));
+}
+
+function theilSen(ys) {
+  const v=ys.map((val,i)=>val!=null?{val,i}:null).filter(Boolean);
+  if(v.length<2) return null;
+  const slopes=[];
+  for(let i=0;i<v.length;i++)
+    for(let j=i+1;j<v.length;j++){
+      const dx=v[j].i-v[i].i;
+      if(dx) slopes.push((v[j].val-v[i].val)/dx);
+    }
+  slopes.sort((a,b)=>a-b);
+  const m=Math.floor(slopes.length/2);
+  return slopes.length%2 ? slopes[m] : (slopes[m-1]+slopes[m])/2;
+}
+
+function normCDF(x) {
+  const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
+  const sg=x<0?-1:1; x=Math.abs(x)/Math.sqrt(2);
+  const t=1/(1+p*x);
+  const y=1-(((((a5*t+a4)*t)+a3)*t+a2)*t+a1)*t*Math.exp(-x*x);
+  return 0.5*(1+sg*y);
+}
+
+function mannKendall(ys) {
+  const v=ys.filter(x=>x!=null);
+  if(v.length<3) return {trend:'insuficiente',tau:null,p:null};
+  let S=0;
+  for(let i=0;i<v.length;i++)
+    for(let j=i+1;j<v.length;j++) S+=Math.sign(v[j]-v[i]);
+  const n=v.length;
+  const varS=n*(n-1)*(2*n+5)/18;
+  const Z=S>0?(S-1)/Math.sqrt(varS):S<0?(S+1)/Math.sqrt(varS):0;
+  const tau=S/(n*(n-1)/2);
+  const pv=2*(1-normCDF(Math.abs(Z)));
+  const trend=pv<0.05?(S>0?'crescente':'decrescente'):'sem tendência';
+  return {trend, tau:tau.toFixed(3), p:pv.toFixed(4)};
+}
+
+function chartOpts(small=false) {
+  return {
+    responsive:true,
+    interaction:{mode:'index',intersect:false},
+    plugins:{
+      legend:{display:false},
+      tooltip:{
+        backgroundColor:'#161b22',borderColor:'#30363d',borderWidth:1,
+        titleColor:'#e6edf3',bodyColor:'#7d8590',
+        titleFont:{family:'JetBrains Mono',size:11},
+        bodyFont:{family:'JetBrains Mono',size:11},
+        callbacks:{
+          label: ctx => ' '+ctx.dataset.label+': '+(ctx.parsed.y!=null?ctx.parsed.y.toFixed(4):'—')
+        }
+      }
+    },
+    scales:{
+      x:{
+        ticks:{color:'#484f58',font:{family:'JetBrains Mono',size:small?9:10},maxTicksLimit:small?5:10,maxRotation:45},
+        grid:{color:'#1c2128'}
+      },
+      y:{
+        ticks:{color:'#7d8590',font:{family:'JetBrains Mono',size:small?9:10},maxTicksLimit:6},
+        grid:{color:'#1c2128'}
+      }
+    },
+    animation:{duration:250}
+  };
+}
+
+function buildUI(rois) {
+  let posRois=0, totalRows=0, lastDate=null;
+  rois.forEach(r => {
+    const d=prep(r);
+    totalRows+=d.length;
+    const mk=mannKendall(d.map(x=>x.NDVI));
+    if(mk.trend==='crescente') posRois++;
+    if(d.length){ const ld=d[d.length-1].date; if(!lastDate||ld>lastDate) lastDate=ld; }
+  });
+  const pct=rois.length?Math.round(posRois/rois.length*100):0;
+  document.getElementById('sumcards').innerHTML = `
+    <div class="sc"><div class="scl">Áreas monitoradas</div><div class="scv g">${rois.length}</div><div class="scs">polígonos ativos</div></div>
+    <div class="sc"><div class="scl">Tendência positiva</div><div class="scv b">${pct}%</div><div class="scs">${posRois} de ${rois.length} áreas (NDVI)</div></div>
+    <div class="sc"><div class="scl">Registros totais</div><div class="scv y">${totalRows}</div><div class="scs">capturas processadas</div></div>
+    <div class="sc"><div class="scl">Última coleta</div><div class="scv" style="font-size:18px;color:var(--tx)">${lastDate?lastDate.toLocaleDateString('pt-BR'):'—'}</div><div class="scs">data mais recente</div></div>
+  `;
+
+  const sel=document.getElementById('roisel');
+  rois.forEach(r=>{ const o=document.createElement('option'); o.value=r; o.textContent='Área '+r; sel.appendChild(o); });
+  S.roi=rois[0];
+  sel.addEventListener('change',()=>{ S.roi=sel.value; render(); });
+
+  document.querySelectorAll('.it').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      S.idx=btn.dataset.i;
+      document.querySelectorAll('.it').forEach(b=>b.className='it');
+      btn.classList.add('s'+S.idx);
+      document.getElementById('legline').style.background=ICLR[S.idx];
+      render();
+    });
+  });
+
+  document.querySelectorAll('#magrp .btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('#magrp .btn').forEach(b=>b.classList.remove('on'));
+      btn.classList.add('on'); S.ma=parseInt(btn.dataset.v); render();
+    });
+  });
+
+  document.querySelectorAll('#reggrp .btn').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      document.querySelectorAll('#reggrp .btn').forEach(b=>b.classList.remove('on'));
+      btn.classList.add('on'); S.reg=btn.dataset.v==='1'; render();
+    });
+  });
+
+  render();
+}
+
+function render() {
+  document.getElementById('roilbl').textContent = 'Área ' + S.roi;
+  const data = prep(S.roi);
+  renderMain(data);
+  renderStats(data);
+  renderSmall(data);
+}
+
+function renderMain(data) {
+  const color=ICLR[S.idx];
+  const labels=data.map(d=>d.date.toLocaleDateString('pt-BR'));
+  const ys=data.map(d=>d[S.idx]!=null?+d[S.idx].toFixed(6):null);
+  const ma=movAvg(ys,S.ma);
+  const reg=S.reg?linReg(ys):null;
+  const maLabel = S.ma>0 ? 'Média móvel ('+S.ma+' semanas)' : 'Média móvel';
+
+  document.getElementById('maintitle').textContent = S.idx + ' — Área ' + S.roi;
+
+  const ds=[{
+    label:S.idx, data:ys,
+    borderColor:color, backgroundColor:color+'20',
+    fill:true, tension:0.3,
+    pointRadius:data.length>60?0:3, pointHoverRadius:5,
+    borderWidth:1.5, order:3
+  }];
+  if(S.ma>0) ds.push({
+    label:maLabel, data:ma,
+    borderColor:'#58a6ff', borderWidth:2, borderDash:[6,3],
+    pointRadius:0, fill:false, tension:0.4, spanGaps:true, order:2
+  });
+  if(reg) ds.push({
+    label:'Reta de regressão', data:reg,
+    borderColor:'#e3b341', borderWidth:1.5, borderDash:[3,3],
+    pointRadius:0, fill:false, order:1
+  });
+
+  const ctx=document.getElementById('mainchart');
+  if(S.main) S.main.destroy();
+  S.main=new Chart(ctx,{type:'line',data:{labels,datasets:ds},options:chartOpts(false)});
+}
+
+function renderStats(data) {
+  const grid=document.getElementById('statsgrid');
+  grid.innerHTML='';
+  IDX.forEach(ix=>{
+    const ys=data.map(d=>d[ix]!=null?+d[ix]:null);
+    const valid=ys.filter(v=>v!=null);
+    if(!valid.length) return;
+    const mk=mannKendall(ys);
+    const slope=theilSen(ys);
+    const slopeY=slope!=null?(slope*52).toFixed(5):'—';
+    const last=valid[valid.length-1].toFixed(4);
+    const mean=(valid.reduce((a,b)=>a+b,0)/valid.length).toFixed(4);
+    const min=Math.min(...valid).toFixed(4);
+    const max=Math.max(...valid).toFixed(4);
+    const tclass=mk.trend==='crescente'?'up':mk.trend==='decrescente'?'dn':'ne';
+    const ticon=mk.trend==='crescente'?'↑':mk.trend==='decrescente'?'↓':'→';
+    const el=document.createElement('div');
+    el.className='st '+ix.toLowerCase();
+    el.innerHTML=`
+      <div class="stn ${ix.toLowerCase()}">${ix}</div>
+      <div class="sr"><span class="k">Tendência</span><span class="v"><span class="badge ${tclass}">${ticon} ${mk.trend}</span></span></div>
+      <div class="sr"><span class="k">Mann-Kendall τ</span><span class="v">${mk.tau??'—'}</span></div>
+      <div class="sr"><span class="k">Valor de p</span><span class="v">${mk.p??'—'}</span></div>
+      <div class="sr"><span class="k">Taxa anual (Theil-Sen)</span><span class="v">${slopeY}</span></div>
+      <div class="sr"><span class="k">Último valor</span><span class="v">${last}</span></div>
+      <div class="sr"><span class="k">Média</span><span class="v">${mean}</span></div>
+      <div class="sr"><span class="k">Mín. / Máx.</span><span class="v">${min} / ${max}</span></div>
+    `;
+    grid.appendChild(el);
+  });
+}
+
+function renderSmall(data) {
+  Object.values(S.small).forEach(c=>c.destroy());
+  S.small={};
+  const grid=document.getElementById('smallgrid');
+  grid.innerHTML='';
+  const labels=data.map(d=>d.date.toLocaleDateString('pt-BR'));
+
+  IDX.forEach(ix=>{
+    const color=ICLR[ix];
+    const ys=data.map(d=>d[ix]!=null?+d[ix].toFixed(6):null);
+    const ma=movAvg(ys,S.ma);
+    const reg=S.reg?linReg(ys):null;
+
+    const wrap=document.createElement('div');
+    wrap.className='smp';
+    wrap.innerHTML=`<div class="smpt" style="color:${color}">${ix} <span style="color:var(--dm);font-weight:400">· Área ${S.roi}</span></div><canvas id="sc_${ix}" height="150"></canvas>`;
+    grid.appendChild(wrap);
+
+    setTimeout(()=>{
+      const ds=[{
+        label:ix, data:ys,
+        borderColor:color, backgroundColor:color+'18',
+        fill:true, tension:0.3,
+        pointRadius:data.length>60?0:2, borderWidth:1.5, order:3
+      }];
+      if(S.ma>0) ds.push({
+        label:'Média móvel', data:ma,
+        borderColor:'#58a6ff',borderWidth:1.5,borderDash:[5,3],
+        pointRadius:0,fill:false,spanGaps:true,tension:0.4,order:2
+      });
+      if(reg) ds.push({
+        label:'Reta de regressão', data:reg,
+        borderColor:'#e3b341',borderWidth:1,borderDash:[3,3],
+        pointRadius:0,fill:false,order:1
+      });
+      const ctx=document.getElementById('sc_'+ix);
+      if(!ctx) return;
+      S.small[ix]=new Chart(ctx,{type:'line',data:{labels,datasets:ds},options:chartOpts(true)});
+    },0);
+  });
+}
+</script>
+</body>
+</html>
