@@ -132,18 +132,6 @@ select:focus{border-color:var(--bl)}
     <button class="it" data-i="NBR">NBR</button>
   </div>
 
-  <div class="panel">
-    <div class="ph">
-      <span class="pt" id="maintitle">—</span>
-      <div class="leg">
-        <div class="li"><div class="ll" id="legline" style="background:var(--ndvi)"></div>série temporal</div>
-        <div class="li"><div class="ld" style="border-color:var(--bl)"></div>média móvel</div>
-        <div class="li"><div class="ld" style="border-color:var(--yw)"></div>reta de regressão</div>
-      </div>
-    </div>
-    <canvas id="mainchart" height="260"></canvas>
-  </div>
-
   <div class="slbl">Indicadores estatísticos — <span id="roilbl">—</span></div>
   <div class="sg" id="statsgrid"></div>
 
@@ -156,7 +144,7 @@ const XLSX_URL = 'https://raw.githubusercontent.com/pedrowindisch/regeneracao/ma
 const IDX = ['NDVI','NDMI','EVI','SAVI','NBR'];
 const ICLR = {NDVI:'#3fb950',NDMI:'#58a6ff',EVI:'#f0883e',SAVI:'#bc8cff',NBR:'#f85149'};
 
-const S = {sheets:{}, roi:null, idx:'NDVI', ma:4, reg:true, main:null, small:{}};
+const S = {sheets:{}, roi:null, idx:'NDVI', ma:4, reg:true, small:{}};
 
 function setLoad(msg, pct) {
   document.getElementById('lt').textContent = msg;
@@ -261,6 +249,38 @@ function movAvg(ys, w) {
     if(i<w-1) return null;
     const sl=ys.slice(i-w+1,i+1).filter(v=>v!=null);
     return sl.length ? sl.reduce((a,b)=>a+b,0)/sl.length : null;
+  });
+}
+
+const MM = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+function monthLabel(d){ return MM[d.getMonth()]+'/'+String(d.getFullYear()).slice(2); }
+
+function median(vals){
+  if(!vals.length) return null;
+  const s=[...vals].sort((a,b)=>a-b);
+  const m=Math.floor(s.length/2);
+  return s.length%2 ? s[m] : (s[m-1]+s[m])/2;
+}
+
+function monthlyMedian(rows){
+  const buckets={};
+  rows.forEach(r=>{
+    const y=r.date.getFullYear(), m=r.date.getMonth();
+    const key=y+'-'+String(m).padStart(2,'0');
+    if(!buckets[key]) buckets[key]={date:new Date(y,m,1)};
+    IDX.forEach(ix=>{
+      const v=r[ix];
+      if(v==null) return;
+      if(!buckets[key][ix]) buckets[key][ix]=[];
+      buckets[key][ix].push(v);
+    });
+  });
+  const keys=Object.keys(buckets).sort();
+  return keys.map(k=>{
+    const b=buckets[k];
+    const o={date:b.date};
+    IDX.forEach(ix=>{ o[ix]= b[ix]?+median(b[ix]).toFixed(6):null; });
+    return o;
   });
 }
 
@@ -370,7 +390,6 @@ function buildUI(rois) {
       S.idx=btn.dataset.i;
       document.querySelectorAll('.it').forEach(b=>b.className='it');
       btn.classList.add('s'+S.idx);
-      document.getElementById('legline').style.background=ICLR[S.idx];
       render();
     });
   });
@@ -394,43 +413,9 @@ function buildUI(rois) {
 
 function render() {
   document.getElementById('roilbl').textContent = 'Área ' + S.roi;
-  const data = prep(S.roi);
-  renderMain(data);
+  const data = monthlyMedian(prep(S.roi));
   renderStats(data);
   renderSmall(data);
-}
-
-function renderMain(data) {
-  const color=ICLR[S.idx];
-  const labels=data.map(d=>d.date.toLocaleDateString('pt-BR'));
-  const ys=data.map(d=>d[S.idx]!=null?+d[S.idx].toFixed(6):null);
-  const ma=movAvg(ys,S.ma);
-  const reg=S.reg?linReg(ys):null;
-  const maLabel = S.ma>0 ? 'Média móvel ('+S.ma+' semanas)' : 'Média móvel';
-
-  document.getElementById('maintitle').textContent = S.idx + ' — Área ' + S.roi;
-
-  const ds=[{
-    label:S.idx, data:ys,
-    borderColor:color, backgroundColor:color+'20',
-    fill:true, tension:0.3,
-    pointRadius:data.length>60?0:3, pointHoverRadius:5,
-    borderWidth:1.5, order:3
-  }];
-  if(S.ma>0) ds.push({
-    label:maLabel, data:ma,
-    borderColor:'#58a6ff', borderWidth:2, borderDash:[6,3],
-    pointRadius:0, fill:false, tension:0.4, spanGaps:true, order:2
-  });
-  if(reg) ds.push({
-    label:'Reta de regressão', data:reg,
-    borderColor:'#e3b341', borderWidth:1.5, borderDash:[3,3],
-    pointRadius:0, fill:false, order:1
-  });
-
-  const ctx=document.getElementById('mainchart');
-  if(S.main) S.main.destroy();
-  S.main=new Chart(ctx,{type:'line',data:{labels,datasets:ds},options:chartOpts(false)});
 }
 
 function renderStats(data) {
@@ -442,9 +427,8 @@ function renderStats(data) {
     if(!valid.length) return;
     const mk=mannKendall(ys);
     const slope=theilSen(ys);
-    const slopeY=slope!=null?(slope*52).toFixed(5):'—';
-    const last=valid[valid.length-1].toFixed(4);
-    const mean=(valid.reduce((a,b)=>a+b,0)/valid.length).toFixed(4);
+    const slopeY=slope!=null?slope.toFixed(5):'—';
+    const med=median(valid).toFixed(4);
     const min=Math.min(...valid).toFixed(4);
     const max=Math.max(...valid).toFixed(4);
     const tclass=mk.trend==='crescente'?'up':mk.trend==='decrescente'?'dn':'ne';
@@ -454,11 +438,10 @@ function renderStats(data) {
     el.innerHTML=`
       <div class="stn ${ix.toLowerCase()}">${ix}</div>
       <div class="sr"><span class="k">Tendência</span><span class="v"><span class="badge ${tclass}">${ticon} ${mk.trend}</span></span></div>
-      <div class="sr"><span class="k">Mann-Kendall τ</span><span class="v">${mk.tau??'—'}</span></div>
-      <div class="sr"><span class="k">Valor de p</span><span class="v">${mk.p??'—'}</span></div>
-      <div class="sr"><span class="k">Taxa anual (Theil-Sen)</span><span class="v">${slopeY}</span></div>
-      <div class="sr"><span class="k">Último valor</span><span class="v">${last}</span></div>
-      <div class="sr"><span class="k">Média</span><span class="v">${mean}</span></div>
+      <div class="sr"><span class="k">Mann-Kendall τ (Teste de tendência)</span><span class="v">${mk.tau??'—'}</span></div>
+      <div class="sr"><span class="k">Valor de p (confiabilidade estatística)</span><span class="v">${mk.p??'—'}</span></div>
+      <div class="sr"><span class="k">Theil-Sen (velocidade da regeneração)</span><span class="v">${slopeY}</span></div>
+      <div class="sr"><span class="k">Mediana</span><span class="v">${med}</span></div>
       <div class="sr"><span class="k">Mín. / Máx.</span><span class="v">${min} / ${max}</span></div>
     `;
     grid.appendChild(el);
@@ -470,7 +453,9 @@ function renderSmall(data) {
   S.small={};
   const grid=document.getElementById('smallgrid');
   grid.innerHTML='';
-  const labels=data.map(d=>d.date.toLocaleDateString('pt-BR'));
+  const labels=data.map(d=>monthLabel(d.date));
+
+  const TITLE={NDVI:'ganho inicial de biomassa',SAVI:'ganho inicial da regeneração',EVI:'ganho de estrutura de dossel',NBR:'ganho de porte lenhoso',NDMI:'ganho estrutural e regeneração saudável'};
 
   IDX.forEach(ix=>{
     const color=ICLR[ix];
@@ -480,7 +465,7 @@ function renderSmall(data) {
 
     const wrap=document.createElement('div');
     wrap.className='smp';
-    wrap.innerHTML=`<div class="smpt" style="color:${color}">${ix} <span style="color:var(--dm);font-weight:400">· Área ${S.roi}</span></div><canvas id="sc_${ix}" height="150"></canvas>`;
+    wrap.innerHTML=`<div class="smpt" style="color:${color}">${ix} · ${TITLE[ix]}</div><canvas id="sc_${ix}" height="150"></canvas>`;
     grid.appendChild(wrap);
 
     setTimeout(()=>{
